@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
 from aiohttp import web
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -23,34 +23,29 @@ async def send_auto_deal():
         logging.error(f"Ошибка отправки: {e}")
 
 async def background_poster():
-    await asyncio.sleep(5) # Пауза перед первым постом
+    await asyncio.sleep(5)
     while True:
         await send_auto_deal()
-        # Интервал между постами: 3 часа (10800 секунд)
         await asyncio.sleep(10800)
 
-async def handle_ping(request):
+async def handle(request):
     return web.Response(text="Bot is running!")
 
-async def main():
-    logging.basicConfig(level=logging.INFO)
-    
-    # Запуск фонового постинга в канал
-    asyncio.create_task(background_poster())
-    
-    # Настройка веб-сервера для Render (чтобы хостинг видел активность)
+async def web_server():
     app = web.Application()
-    app.router.add_get("/", handle_ping)
+    app.router.add_get("/", handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    
     port = int(os.getenv("PORT", 10000))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
+
+async def main():
+    logging.basicConfig(level=logging.INFO)
+    asyncio.create_task(web_server())
+    asyncio.create_task(background_poster())
     
-    # Запуск поллинга бота
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
