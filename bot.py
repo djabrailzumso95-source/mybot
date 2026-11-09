@@ -8,75 +8,80 @@ from aiogram.filters import CommandStart
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@wbozonnahodki11")
-TAKPRODAM_SUBID = os.getenv("TAKPRODAM_SUBID", "wbozon_subid")
+TAKPRODAM_API_KEY = os.getenv("TAKPRODAM_API_KEY")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
-def make_takprodam_link(original_url: str) -> str:
-    """Преобразует прямую ссылку маркетплейса в твою реферальную через Такпродам"""
-    return f"https://takprodam.ru/redirect?subid={TAKPRODAM_SUBID}&url={original_url}"
-
-
-async def fetch_hot_deals_from_api():
-    """Фоновый забор реальных скидок и товаров через API"""
-    # Здесь используется шлюз скидок/каталогов маркетплейсов
-    api_endpoint = "https://api.fake-deals-service.com/v1/hot-items"
+async def fetch_takprodam_products():
+    """Запрос реальных товаров через официальный API Такпродам"""
+    url = "https://app.takprodam.ru/api/v1/products"  # Официальный эндпоинт API
+    headers = {
+        "Authorization": f"Bearer {TAKPRODAM_API_KEY}",
+        "Content-Type": "application/json",
+    }
 
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.get(api_endpoint, timeout=10) as resp:
+            async with session.get(
+                url, headers=headers, params={"limit": 20}, timeout=15
+            ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    return data.get("products", [])
+                    # Возвращаем список товаров из ответа
+                    return data.get("results", data.get("items", []))
+                else:
+                    logging.error(f"Ошибка API Такпродам: Статус {resp.status}")
         except Exception as e:
-            logging.error(f"Ошибка запроса к API товаров: {e}")
+            logging.error(f"Ошибка подключения к API Такпродам: {e}")
 
-    # Запасной резервный каталог (если API временно не ответило)
-    return [
-        {
-            "title": "Беспроводная колонка c мощным басом",
-            "price": "1 890 ₽",
-            "old_price": "3 990 ₽",
-            "url": "https://www.wildberries.ru/catalog/12345678/detail.aspx",
-            "photo": "https://picsum.photos/800/600",
-        },
-        {
-            "title": "Умные часы с Amoled экраном",
-            "price": "2 450 ₽",
-            "old_price": "5 100 ₽",
-            "url": "https://www.ozon.ru/product/87654321",
-            "photo": "https://picsum.photos/800/601",
-        },
-    ]
+    return []
 
 
 async def scheduled_poster():
-    """Автоматический автопостинг по таймеру"""
+    """Фоновый автопостинг по расписанию"""
     while True:
         try:
-            items = await fetch_hot_deals_from_api()
-            if items:
-                item = random.choice(items)
-                affiliate_link = make_takprodam_link(item["url"])
+            products = await fetch_takprodam_products()
+
+            if products:
+                item = random.choice(products)
+
+                title = item.get("name", item.get("title", "Отличный товар"))
+                price = item.get("price", "Уточняйте по ссылке")
+                old_price = item.get("old_price", "")
+                link = item.get(
+                    "link", item.get("url", item.get("affiliate_link", ""))
+                )
+                photo = item.get(
+                    "image", item.get("photo", "https://via.placeholder.com/600")
+                )
+
+                price_str = f"💰 **Цена:** {price}"
+                if old_price:
+                    price_str += f" ~(вместо {old_price})~"
 
                 caption = (
-                    f"🔥 **{item['title']}**\n\n"
-                    f"💰 **Цена:** {item['price']} ~(вместо {item.get('old_price', '')})~\n\n"
-                    f"🛒 [Забрать на маркетплейсе]({affiliate_link})"
+                    f"🔥 **{title}**\n\n"
+                    f"{price_str}\n\n"
+                    f"🛒 [Заказать на маркетплейсе]({link})"
                 )
 
                 await bot.send_photo(
                     chat_id=CHANNEL_ID,
-                    photo=item["photo"],
+                    photo=photo,
                     caption=caption,
                     parse_mode="Markdown",
                 )
-                logging.info("Пост успешно отправлен в канал!")
+                logging.info("Пост из API Такпродам успешно выложен в канал!")
+            else:
+                logging.warning(
+                    "Список товаров пуст или API не вернуло данные. Пробуем позже."
+                )
 
         except Exception as err:
-            logging.error(f"Ошибка автопостинга: {err}")
+            logging.error(f"Ошибка при автопостинге: {err}")
 
         # Публикация каждые 3 часа (10800 секунд)
         await asyncio.sleep(10800)
@@ -85,18 +90,16 @@ async def scheduled_poster():
 @dp.message(CommandStart())
 async def start_cmd(message: types.Message):
     await message.answer(
-        "🤖 Бот работает в полностью автономном режиме по API!\n"
-        f"Посты публикуются в канал {CHANNEL_ID} по расписанию."
+        "🤖 Бот успешно подключен к API Такпродам!\n"
+        f"Автопостинг работает в канале {CHANNEL_ID}."
     )
 
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-    # Запуск фонового автопостинга вместе с ботом
     asyncio.create_task(scheduled_poster())
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
