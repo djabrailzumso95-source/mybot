@@ -51,30 +51,36 @@ async def scheduled_poster():
                 title = item.get("name", item.get("title", "Отличный товар"))
                 price = item.get("price", "Уточняйте по ссылке")
                 old_price = item.get("old_price", "")
-                link = item.get(
-                    "link", item.get("url", item.get("affiliate_link", ""))
-                )
-                photo = item.get(
-                    "image", item.get("photo", "https://via.placeholder.com/600")
-                )
+                
+                # Приоритет отдаем партнерской ссылке
+                link = item.get("affiliate_link") or item.get("url") or item.get("link", "")
+                photo = item.get("image") or item.get("photo") or "https://via.placeholder.com/600"
 
-                price_str = f"💰 **Цена:** {price}"
+                # Проверяем корректность ссылки, если она относительная
+                if link and not link.startswith("http"):
+                    link = f"https://takprodam.ru{link}"
+
+                price_str = f"💰 <b>Цена:</b> {price}"
                 if old_price:
-                    price_str += f" ~(вместо {old_price})~"
+                    price_str += f" <s>(вместо {old_price})</s>"
 
+                # Форматирование через HTML, чтобы ссылки не ломались
                 caption = (
-                    f"🔥 **{title}**\n\n"
+                    f"🔥 <b>{title}</b>\n\n"
                     f"{price_str}\n\n"
-                    f"🛒 [Заказать на маркетплейсе]({link})"
+                    f'🛒 <a href="{link}">Забрать на маркетплейсе</a>'
                 )
 
-                await bot.send_photo(
-                    chat_id=CHANNEL_ID,
-                    photo=photo,
-                    caption=caption,
-                    parse_mode="Markdown",
-                )
-                logging.info("Пост из API Такпродам успешно выложен в канал!")
+                if link:
+                    await bot.send_photo(
+                        chat_id=CHANNEL_ID,
+                        photo=photo,
+                        caption=caption,
+                        parse_mode="HTML",
+                    )
+                    logging.info("Пост из API Такпродам успешно выложен в канал!")
+                else:
+                    logging.warning("У выбранного товара отсутствует ссылка.")
             else:
                 logging.warning(
                     "Список товаров пуст или API не вернуло данные. Пробуем позже."
